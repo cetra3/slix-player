@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Slix Player
+Exec=slix-player
+Icon=slix-player
+Categories=Audio;Music;Player;
+Comment=A lightweight music player

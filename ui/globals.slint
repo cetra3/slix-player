@@ -1,0 +1,45 @@
+export struct TrackEntry {
+    artist: string,
+    title: string,
+    duration-text: string,
+    duration-secs: float,
+    modified-text: string,
+    mtime-secs: int,
+    path: string,
+}
+
+export global NowPlaying {
+    in property <string> path;
+    in property <string> artist;
+    in property <string> title;
+    in property <image> cover-art;
+    in property <image> waveform-image;
+    in property <float> duration-secs;
+    in property <float> progress;
+    in property <string> current-time-text: "0:00";
+    in property <string> total-time-text: "0:00";
+}
+
+export global PlayState {
+    in property <bool> is-playing;
+    in-out property <float> volume: 1.0;
+    callback play-pause();
+    callback seek(float);
+    callback volume-changed(float);
+    callback next();
+    callback prev();
+}
+
+export global TrackListState {
+    in property <[TrackEntry]> tracks;
+    in property <bool> loading;
+    in property <string> loading-text;
+    in-out property <int> sort-column: 0;
+    in-out property <bool> sort-ascending: true;
+    in-out property <bool> shuffle-enabled: false;
+    in-out property <string> filter-text;
+    callback sort-changed(int);
+    callback shuffle-toggled();
+    callback filter-changed(string);
+    callback track-selected(TrackEntry);
+}

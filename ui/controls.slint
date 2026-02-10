@@ -1,0 +1,243 @@
+export component PlayButton inherits Rectangle {
+    in property <bool> playing: false;
+    in property <length> size: 36px;
+    callback clicked();
+
+    width: root.size;
+    background: transparent;
+
+    property <length> offset-y: (root.height - root.size) / 2;
+
+    // Circle background
+    Rectangle {
+        x: 0;
+        y: root.offset-y;
+        width: root.size;
+        height: root.size;
+        border-radius: root.size / 2;
+        background: #73c6ec;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    if !root.playing: Image {
+        x: (root.size - self.width) / 2 + 1px;
+        y: root.offset-y + (root.size - self.height) / 2;
+        width: root.size * 0.36;
+        height: root.size * 0.36;
+        source: @image-url("icons/play.svg");
+        colorize: white;
+        image-fit: contain;
+    }
+
+    if root.playing: Image {
+        x: (root.size - self.width) / 2;
+        y: root.offset-y + (root.size - self.height) / 2;
+        width: root.size * 0.32;
+        height: root.size * 0.32;
+        source: @image-url("icons/pause.svg");
+        colorize: white;
+        image-fit: contain;
+    }
+}
+
+export component SeekBar inherits Rectangle {
+    in property <float> progress: 0.0;
+    callback seek(float);
+
+    property <bool> dragging: seek-ta.pressed;
+    property <float> drag-progress: clamp(seek-ta.mouse-x / root.width, 0.0, 1.0);
+    property <float> display-progress: root.dragging ? root.drag-progress : root.progress;
+
+    // Track background
+    Rectangle {
+        x: 0;
+        y: (root.height - 4px) / 2;
+        width: root.width;
+        height: 4px;
+        border-radius: 2px;
+        background: #333;
+    }
+
+    // Filled portion
+    Rectangle {
+        x: 0;
+        y: (root.height - 4px) / 2;
+        width: root.width * clamp(root.display-progress, 0.0, 1.0);
+        height: 4px;
+        border-radius: 2px;
+        background: #73c6ec;
+    }
+
+    seek-ta := TouchArea {
+        mouse-cursor: pointer;
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                root.seek(clamp(self.mouse-x / root.width, 0.0, 1.0));
+            }
+        }
+    }
+}
+
+export component IconButton inherits Rectangle {
+    in property <image> icon-source;
+    in property <length> icon-size: 14px;
+    in property <bool> active: false;
+    in property <float> icon-opacity: 1.0;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    width: 28px;
+    background: transparent;
+
+    Rectangle {
+        x: 0;
+        y: (parent.height - 28px) / 2;
+        width: 28px;
+        height: 28px;
+        border-radius: 14px;
+        background: ta.has-hover ? #333 : transparent;
+    }
+
+    Image {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: root.icon-size;
+        height: root.icon-size;
+        source: root.icon-source;
+        colorize: root.active ? #73c6ec : (ta.has-hover ? white : #999);
+        image-fit: contain;
+        opacity: root.icon-opacity;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component VolumeControl inherits Rectangle {
+    in-out property <float> volume: 1.0;
+    callback changed(float);
+
+    property <bool> muted: false;
+    property <float> saved-volume: 1.0;
+    property <float> display-volume: root.muted ? 0.0 : root.volume;
+    property <length> track-left: 24px;
+    property <length> track-width: root.width - track-left;
+
+    width: 120px;
+
+    // Speaker icon — changes based on mute state and volume level
+    Rectangle {
+        x: 0;
+        y: (root.height - 20px) / 2;
+        width: 20px;
+        height: 20px;
+
+        if root.muted: Image {
+            width: 14px;
+            height: 14px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: @image-url("icons/volume-xmark.svg");
+            colorize: icon-ta.has-hover ? white : #999;
+            image-fit: contain;
+        }
+        if !root.muted && root.volume == 0: Image {
+            width: 14px;
+            height: 14px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: @image-url("icons/volume-off.svg");
+            colorize: icon-ta.has-hover ? white : #999;
+            image-fit: contain;
+        }
+        if !root.muted && root.volume > 0 && root.volume <= 0.5: Image {
+            width: 14px;
+            height: 14px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: @image-url("icons/volume-low.svg");
+            colorize: icon-ta.has-hover ? white : #999;
+            image-fit: contain;
+        }
+        if !root.muted && root.volume > 0.5: Image {
+            width: 14px;
+            height: 14px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: @image-url("icons/volume-high.svg");
+            colorize: icon-ta.has-hover ? white : #999;
+            image-fit: contain;
+        }
+
+        icon-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                if root.muted {
+                    root.muted = false;
+                    root.volume = root.saved-volume;
+                    root.changed(root.volume);
+                } else {
+                    root.saved-volume = root.volume;
+                    root.muted = true;
+                    root.changed(0.0);
+                }
+            }
+        }
+    }
+
+    // Track background
+    Rectangle {
+        x: root.track-left;
+        y: (root.height - 4px) / 2;
+        width: root.track-width;
+        height: 4px;
+        border-radius: 2px;
+        background: #333;
+    }
+
+    // Filled portion
+    Rectangle {
+        x: root.track-left;
+        y: (root.height - 4px) / 2;
+        width: root.track-width * clamp(root.display-volume, 0.0, 1.0);
+        height: 4px;
+        border-radius: 2px;
+        background: #73c6ec;
+    }
+
+    // Thumb
+    Rectangle {
+        x: root.track-left + root.track-width * clamp(root.display-volume, 0.0, 1.0) - 5px;
+        y: (root.height - 10px) / 2;
+        width: 10px;
+        height: 10px;
+        border-radius: 5px;
+        background: #ccc;
+    }
+
+    slider-ta := TouchArea {
+        x: root.track-left;
+        width: root.track-width;
+        mouse-cursor: pointer;
+
+        moved => {
+            if (self.pressed) {
+                root.muted = false;
+                root.volume = clamp(self.mouse-x / root.track-width, 0.0, 1.0);
+                root.changed(root.volume);
+            }
+        }
+
+        clicked => {
+            root.muted = false;
+            root.volume = clamp(self.mouse-x / root.track-width, 0.0, 1.0);
+            root.changed(root.volume);
+        }
+    }
+}

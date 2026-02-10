@@ -1,0 +1,102 @@
+export component WaveformView inherits Rectangle {
+    in property <image> waveform-image;
+    in property <float> progress: 0.0;
+    callback seek(float);
+
+    property <bool> hovering: ta.has-hover;
+    property <length> hover-x: ta.mouse-x;
+
+    background: transparent;
+
+    // Gray waveform (full width, bottom layer)
+    Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: root.waveform-image;
+        colorize: #555;
+        image-fit: fill;
+        image-rendering: pixelated;
+    }
+
+    // Hover ghost highlight — between cursor and progress position
+    // Backward: cursor behind progress (ghost between cursor and progress)
+    if root.hovering && root.hover-x < root.width * clamp(root.progress, 0.0, 1.0): Rectangle {
+        clip: true;
+        x: root.hover-x;
+        y: 0;
+        width: root.width * clamp(root.progress, 0.0, 1.0) - root.hover-x;
+        height: root.height;
+
+        Image {
+            x: 0 - parent.x;
+            y: 0;
+            width: root.width;
+            height: root.height;
+            source: root.waveform-image;
+            colorize: #888;
+            image-fit: fill;
+            image-rendering: pixelated;
+        }
+    }
+    // Forward: cursor ahead of progress (ghost on unplayed portion)
+    if root.hovering && root.hover-x > root.width * clamp(root.progress, 0.0, 1.0): Rectangle {
+        clip: true;
+        x: root.width * clamp(root.progress, 0.0, 1.0);
+        y: 0;
+        width: root.hover-x - self.x;
+        height: root.height;
+
+        Image {
+            x: 0 - parent.x;
+            y: 0;
+            width: root.width;
+            height: root.height;
+            source: root.waveform-image;
+            colorize: #888;
+            image-fit: fill;
+            image-rendering: pixelated;
+        }
+    }
+
+    // Progress waveform (clipped to playback position, or hover position when seeking back)
+    Rectangle {
+        clip: true;
+        x: 0;
+        y: 0;
+        width: root.hovering && root.hover-x < root.width * clamp(root.progress, 0.0, 1.0)
+            ? root.hover-x
+            : root.width * clamp(root.progress, 0.0, 1.0);
+        height: root.height;
+
+        Image {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: root.height;
+            source: root.waveform-image;
+            colorize: #73c6ec;
+            image-fit: fill;
+            image-rendering: pixelated;
+        }
+    }
+
+    // Playback position line
+    Rectangle {
+        x: root.width * clamp(root.progress, 0.0, 1.0) - 1px;
+        y: 0;
+        width: 2px;
+        height: root.height;
+        background: white;
+        opacity: 0.9;
+    }
+
+    // Seek touch area
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.seek(self.mouse-x / self.width);
+        }
+    }
+}

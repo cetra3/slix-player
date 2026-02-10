@@ -1,0 +1,207 @@
+import { ListView } from "std-widgets.slint";
+import { TrackEntry, NowPlaying, TrackListState } from "globals.slint";
+
+export { TrackEntry }
+
+component SortableColumnHeader inherits Rectangle {
+    in property <string> label;
+    in property <int> column-index;
+    in property <bool> align-right: false;
+    callback clicked();
+
+    property <bool> is-active: TrackListState.sort-column == root.column-index && !TrackListState.shuffle-enabled;
+
+    HorizontalLayout {
+        spacing: 4px;
+
+        if root.align-right: Rectangle {}
+
+        if root.is-active && root.align-right: VerticalLayout {
+            horizontal-stretch: 0;
+            alignment: center;
+            Image {
+                width: 8px;
+                height: 8px;
+                source: TrackListState.sort-ascending ? @image-url("icons/caret-up.svg") : @image-url("icons/caret-down.svg");
+                colorize: #ccc;
+                image-fit: contain;
+            }
+        }
+
+        Text {
+            horizontal-stretch: 0;
+            text: root.label;
+            color: root.is-active ? #ccc : #666;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+
+        if root.is-active && !root.align-right: VerticalLayout {
+            horizontal-stretch: 0;
+            alignment: center;
+            Image {
+                width: 8px;
+                height: 8px;
+                source: TrackListState.sort-ascending ? @image-url("icons/caret-up.svg") : @image-url("icons/caret-down.svg");
+                colorize: #ccc;
+                image-fit: contain;
+            }
+        }
+
+        if !root.align-right: Rectangle {}
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component TrackListView inherits VerticalLayout {
+    public function scroll-to-track(index: int) {
+        if (index >= 0) {
+            track-list-view.viewport-y = 0 - index * 36px + track-list-view.height / 2 - 18px;
+        }
+    }
+
+    // === Column headers ===
+    Rectangle {
+        height: 28px;
+        background: #1a1a1a;
+
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            spacing: 0px;
+
+            Text {
+                width: 40px;
+                text: "#";
+                color: #666;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+
+            SortableColumnHeader {
+                width: 200px;
+                label: "Artist";
+                column-index: 0;
+                clicked => { TrackListState.sort-changed(0); }
+            }
+
+            SortableColumnHeader {
+                label: "Title";
+                column-index: 1;
+                clicked => { TrackListState.sort-changed(1); }
+            }
+
+
+            SortableColumnHeader {
+                width: 70px;
+                label: "Duration";
+                column-index: 2;
+                align-right: true;
+                clicked => { TrackListState.sort-changed(2); }
+            }
+
+            SortableColumnHeader {
+                width: 130px;
+                label: "Modified";
+                column-index: 3;
+                align-right: true;
+                clicked => { TrackListState.sort-changed(3); }
+            }
+        }
+    }
+
+    // === Separator ===
+    Rectangle {
+        height: 1px;
+        background: #2a2a2a;
+    }
+
+    // === Scrollable track list ===
+    track-list-view := ListView {
+        for track[index] in TrackListState.tracks: Rectangle {
+            height: 36px;
+            property <bool> is-selected: track.path == NowPlaying.path;
+            background: is-selected ? #2a2a2a : (mod(index, 2) == 0 ? #1e1e1e : #222);
+
+            if is-selected: Rectangle {
+                x: 0;
+                y: 0;
+                width: 3px;
+                height: parent.height;
+                background: #73c6ec;
+            }
+
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 0px;
+
+                Text {
+                    width: 40px;
+                    text: index + 1;
+                    color: is-selected ? #73c6ec : #666;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    width: 200px;
+                    text: track.artist;
+                    color: is-selected ? #73c6ec : #999;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                Text {
+                    text: track.title;
+                    color: is-selected ? #fff : #ccc;
+                    font-size: 12px;
+                    font-weight: is-selected ? 700 : 400;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                Text {
+                    width: 70px;
+                    text: track.duration-text;
+                    color: is-selected ? #73c6ec : #666;
+                    font-family: "Geist Mono";
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                }
+                Text {
+                    width: 130px;
+                    text: track.modified-text;
+                    color: is-selected ? #73c6ec : #666;
+                    font-family: "Geist Mono";
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                }
+            }
+
+            row-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { TrackListState.track-selected(track); }
+            }
+        }
+    }
+
+    if TrackListState.loading: Rectangle {
+        height: 36px;
+        background: #1e1e1e;
+        HorizontalLayout {
+            padding-left: 16px;
+            Text {
+                text: TrackListState.loading-text;
+                color: #73c6ec;
+                font-size: 12px;
+                vertical-alignment: center;
+                opacity: 0.3 + 0.7 * (0.5 + 0.5 * sin(360deg * mod(animation-tick() / 1ms, 1000) / 1000));
+            }
+        }
+    }
+}

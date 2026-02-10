@@ -1,0 +1,31 @@
+[package]
+name = "slix-player"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0"
+build = "build.rs"
+
+[dependencies]
+slint = { version = "~1", features = ["unstable-winit-030"] }
+symphonia = { version = "0.5", features = ["all"] }
+# So it turns out a lot of my music files don't have appropriate metadata, and I have to use this branch otherwise you can't seek tracks...
+rodio = { git = "https://github.com/cetra3/rodio.git", branch = "filter_out_zero_duration", features = ["symphonia-mp3", "symphonia-flac", "symphonia-vorbis", "symphonia-wav", "symphonia-isomp4", "symphonia-aac"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+anyhow = "1"
+dirs = "6"
+fjall = "3.0.1"
+bincode = { version = "=2.0.1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+rfd = "0.17"
+rayon = "1"
+chrono = "0.4"
+async-channel = "2"
+i-slint-backend-winit = "1"
+[target.'cfg(target_os = "linux")'.dependencies]
+souvlaki = { version = "0.8", default-features = false, features = ["use_zbus"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+souvlaki = { version = "0.8", default-features = false }
+
+[build-dependencies]
+slint-build = "1"

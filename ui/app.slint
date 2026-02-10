@@ -1,0 +1,449 @@
+import { VerticalBox, HorizontalBox, Palette } from "std-widgets.slint";
+import { PlayButton, SeekBar, VolumeControl, IconButton } from "controls.slint";
+import { WaveformView } from "waveform.slint";
+import { TrackEntry, TrackListView } from "track_list.slint";
+import { NowPlaying, PlayState, TrackListState } from "globals.slint";
+import "./fonts/Geist-Regular.ttf";
+import "./fonts/Geist-Bold.ttf";
+import "./fonts/GeistMono-Regular.ttf";
+
+export { TrackEntry, NowPlaying, PlayState, TrackListState }
+
+export component AppWindow inherits Window {
+    icon: @image-url("icons/icon.svg");
+
+    out property <float> waveform-area-width: waveform-view.width / 1px;
+    in-out property <bool> filter-visible: false;
+
+    callback load-folder();
+    callback drag-window();
+    callback close-window();
+    callback scroll-to-track(int);
+
+    default-font-family: "Geist";
+    no-frame: true;
+    resize-border-width: 8px;
+    background: transparent;
+    title: "Slix Player";
+    preferred-width: 800px;
+    preferred-height: 600px;
+
+    init => {
+        Palette.color-scheme = ColorScheme.dark;
+    }
+
+    forward-focus: key-handler;
+
+    // Rounded clipping container
+    Rectangle {
+        border-radius: 12px;
+        background: #181818;
+        clip: true;
+
+        VerticalLayout {
+            spacing: 0;
+
+            // === Custom title bar ===
+            Rectangle {
+                height: 32px;
+                horizontal-stretch: 1;
+                background: #1a1a1a;
+
+
+                // Title text
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: "Slix Player";
+                    color: white;
+                    font-size: 14px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+
+                // Drag area covers entire title bar
+                TouchArea {
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                            root.drag-window();
+                        }
+                    }
+                }
+
+                // Close button (declared last = on top in z-order, receives clicks first)
+                Rectangle {
+                    x: parent.width - self.width - 8px;
+                    y: (parent.height - self.height) / 2;
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: close-ta.has-hover ? #333 : transparent;
+
+                    Image {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        width: 10px;
+                        height: 10px;
+                        source: @image-url("icons/xmark.svg");
+                        colorize: close-ta.has-hover ? white : #999;
+                        image-fit: contain;
+                    }
+
+                    close-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.close-window();
+                        }
+                    }
+                }
+            }
+
+            // === Player area (fixed height) ===
+            Rectangle {
+                height: 180px;
+
+                HorizontalLayout {
+                    padding: 20px;
+                    spacing: 16px;
+
+                    // Cover art
+                    Rectangle {
+                        width: 140px;
+                        height: 140px;
+                        border-radius: 4px;
+                        clip: true;
+                        background: #2a2a2a;
+
+                        Image {
+                            width: 100%;
+                            height: 100%;
+                            source: NowPlaying.cover-art;
+                            image-fit: cover;
+                        }
+                    }
+
+                    // Right content area
+                    VerticalLayout {
+                        spacing: 8px;
+                        alignment: center;
+
+                        // --- Track loaded: play button + artist/title ---
+                        if NowPlaying.title != "": HorizontalLayout {
+                            spacing: 12px;
+
+                            PlayButton {
+                                horizontal-stretch: 0;
+                                playing: PlayState.is-playing;
+                                size: 44px;
+                                clicked => { PlayState.play-pause(); }
+                            }
+
+                            VerticalLayout {
+                                spacing: 2px;
+                                alignment: center;
+
+                                Text {
+                                    text: NowPlaying.artist;
+                                    color: #999;
+                                    font-size: 13px;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: NowPlaying.title;
+                                    color: white;
+                                    font-size: 16px;
+                                    font-weight: 700;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+
+                        // --- No track: skeleton pills (absolute pos to avoid layout constraints) ---
+                        if NowPlaying.title == "": Rectangle {
+                            height: 44px;
+
+                            Rectangle {
+                                x: 0; y: 0;
+                                width: 44px;
+                                height: 44px;
+                                border-radius: 22px;
+                                background: #2a2a2a;
+
+                                Image {
+                                    x: (parent.width - self.width) / 2 + 1px;
+                                    y: (parent.height - self.height) / 2;
+                                    width: 16px;
+                                    height: 16px;
+                                    source: @image-url("icons/play.svg");
+                                    colorize: #444;
+                                    image-fit: contain;
+                                }
+                            }
+
+                            Rectangle {
+                                x: 56px; y: 6px;
+                                width: 100px; height: 12px;
+                                border-radius: 6px;
+                                background: #2a2a2a;
+                            }
+                            Rectangle {
+                                x: 56px; y: 24px;
+                                width: 180px; height: 16px;
+                                border-radius: 8px;
+                                background: #2a2a2a;
+                            }
+                        }
+
+                        // Waveform / empty state zone
+                        Rectangle {
+                            height: 80px;
+
+                            waveform-view := WaveformView {
+                                visible: NowPlaying.title != "";
+                                x: 0; y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                                waveform-image: NowPlaying.waveform-image;
+                                progress: NowPlaying.progress;
+                                seek(p) => { PlayState.seek(p); }
+                            }
+
+                            // No tracks loaded
+                            if NowPlaying.title == "" && TrackListState.tracks.length == 0: Rectangle {
+                                x: 0; y: 0;
+                                width: parent.width;
+                                height: parent.height;
+
+                                Text {
+                                    x: 0;
+                                    y: (parent.height - self.preferred-height) / 2 - 14px;
+                                    width: 200px;
+                                    height: 16px;
+                                    text: "Open a folder to get started";
+                                    color: #555;
+                                    font-size: 12px;
+                                }
+
+                                Rectangle {
+                                    x: 0;
+                                    y: (parent.height - self.height) / 2 + 10px;
+                                    width: 120px;
+                                    height: 26px;
+                                    border-radius: 13px;
+                                    background: load-ta.has-hover ? #333 : #2a2a2a;
+
+                                    Text {
+                                        text: "Load Folder";
+                                        width: 100px;
+                                        color: load-ta.has-hover ? white : #888;
+                                        font-size: 11px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+
+                                    load-ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.load-folder(); }
+                                    }
+                                }
+                            }
+
+                            // Tracks loaded but none selected
+                            if NowPlaying.title == "" && TrackListState.tracks.length > 0: Text {
+                                y: (parent.height - self.preferred-height) / 2;
+                                width: 200px;
+                                height: 16px;
+                                text: "Choose a track to get started";
+                                color: #555;
+                                font-size: 12px;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // === Separator ===
+            Rectangle {
+                height: 1px;
+                background: #333;
+            }
+
+            // === Track list with column headers ===
+            track-list-view := TrackListView {}
+
+            // === Separator ===
+            Rectangle {
+                height: 1px;
+                background: #333;
+            }
+
+            // === Bottom playback bar ===
+            Rectangle {
+                height: 52px;
+                background: #1a1a1a;
+
+                HorizontalLayout {
+                    padding-left: 9px;
+                    padding-right: 20px;
+                    spacing: 4px;
+
+                    // Transport controls
+                    IconButton {
+                        icon-source: @image-url("icons/backward-step.svg");
+                        icon-size: 13px;
+                        clicked => { PlayState.prev(); }
+                    }
+
+                    PlayButton {
+                        horizontal-stretch: 0;
+                        playing: PlayState.is-playing;
+                        size: 36px;
+                        clicked => { PlayState.play-pause(); }
+                    }
+
+                    IconButton {
+                        icon-source: @image-url("icons/forward-step.svg");
+                        icon-size: 13px;
+                        clicked => { PlayState.next(); }
+                    }
+
+                    IconButton {
+                        icon-source: @image-url("icons/shuffle.svg");
+                        icon-size: 12px;
+                        active: TrackListState.shuffle-enabled;
+                        clicked => { TrackListState.shuffle-toggled(); }
+                    }
+
+                    // Progress: time / seek bar / time — stretches to fill
+                    Text {
+                        horizontal-stretch: 0;
+                        width: 40px;
+                        text: NowPlaying.current-time-text;
+                        color: #999;
+                        font-size: 11px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+
+                    SeekBar {
+                        horizontal-stretch: 1;
+                        progress: NowPlaying.progress;
+                        seek(p) => { PlayState.seek(p); }
+                    }
+
+                    Text {
+                        horizontal-stretch: 0;
+                        width: 40px;
+                        text: NowPlaying.total-time-text;
+                        color: #999;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                    }
+
+                    // Utility controls
+                    IconButton {
+                        icon-source: @image-url("icons/folder.svg");
+                        icon-size: 14px;
+                        active: TrackListState.loading;
+                        icon-opacity: TrackListState.loading ? 0.3 + 0.7 * (0.5 + 0.5 * sin(360deg * mod(animation-tick() / 1ms, 1000) / 1000)) : 1.0;
+                        clicked => { root.load-folder(); }
+                    }
+
+                    IconButton {
+                        icon-source: @image-url("icons/magnifying-glass.svg");
+                        icon-size: 12px;
+                        active: root.filter-visible || TrackListState.filter-text != "";
+                        clicked => {
+                            root.filter-visible = !root.filter-visible;
+                            if root.filter-visible {
+                                filter-input.focus();
+                            }
+                        }
+                    }
+
+                    VolumeControl {
+                        horizontal-stretch: 0;
+                        volume <=> PlayState.volume;
+                        changed(vol) => { PlayState.volume-changed(vol); }
+                    }
+                }
+            }
+        }
+    }
+
+    // Filter popup overlay (floats above bottom bar)
+    Rectangle {
+        visible: root.filter-visible;
+        x: 0;
+        y: parent.height - 52px - 1px - 36px;
+        width: parent.width;
+        height: 36px;
+        background: #252525;
+
+        // Top border
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: 1px;
+            background: #444;
+        }
+
+        HorizontalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 1px;
+            spacing: 8px;
+
+            Rectangle {
+                width: 14px;
+                vertical-stretch: 0;
+
+                Image {
+                    x: 0;
+                    y: (parent.height - self.height) / 2;
+                    width: 14px;
+                    height: 14px;
+                    source: @image-url("icons/magnifying-glass.svg");
+                    colorize: #666;
+                    image-fit: contain;
+                }
+            }
+
+            filter-input := TextInput {
+                vertical-alignment: center;
+                font-size: 12px;
+                color: #ccc;
+                text: TrackListState.filter-text;
+                edited => {
+                    TrackListState.filter-text = self.text;
+                    TrackListState.filter-changed(self.text);
+                }
+                accepted => {
+                    root.filter-visible = false;
+                }
+            }
+        }
+    }
+
+    scroll-to-track(index) => {
+        track-list-view.scroll-to-track(index);
+    }
+
+    key-handler := FocusScope {
+        x: 0;
+        y: 0;
+        width: 0;
+        height: 0;
+
+        key-pressed(event) => {
+            if (event.text == " ") {
+                PlayState.play-pause();
+                accept
+            } else {
+                reject
+            }
+        }
+    }
+}
