@@ -131,6 +131,8 @@ impl App {
                 Some(folder)
             },
             shuffle: self.track_list.is_shuffle(),
+            sort_column: self.track_list.sort_column(),
+            sort_ascending: self.track_list.sort_ascending(),
         });
     }
 
@@ -283,6 +285,8 @@ impl App {
         // Force a full model rebuild after the bulk load so column widths
         // are calculated correctly from the start.
         self.track_list.resync(true);
+
+        self.track_list.restore_sort(saved_state.sort_column, saved_state.sort_ascending);
 
         if saved_state.shuffle {
             let current_path = saved_state.current_track.as_deref().unwrap_or("");

@@ -245,6 +245,27 @@ impl TrackListController {
         self.sort.borrow().shuffle
     }
 
+    pub fn sort_column(&self) -> i32 {
+        self.sort.borrow().column
+    }
+
+    pub fn sort_ascending(&self) -> bool {
+        self.sort.borrow().ascending
+    }
+
+    /// Restore sort column and direction from saved state.
+    pub fn restore_sort(&self, column: i32, ascending: bool) {
+        {
+            let mut sort = self.sort.borrow_mut();
+            sort.column = column;
+            sort.ascending = ascending;
+        }
+        let window = self.window();
+        let tls = window.global::<TrackListState>();
+        tls.set_sort_column(column);
+        tls.set_sort_ascending(ascending);
+    }
+
     /// Restore shuffle state from saved state.
     pub fn restore_shuffle(&self, current_path: &str) {
         let mut sort = self.sort.borrow_mut();

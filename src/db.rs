@@ -28,6 +28,14 @@ pub struct PlayerState {
     pub last_folder: Option<PathBuf>,
     #[serde(default)]
     pub shuffle: bool,
+    #[serde(default)]
+    pub sort_column: i32,
+    #[serde(default = "default_true")]
+    pub sort_ascending: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for PlayerState {
@@ -38,6 +46,8 @@ impl Default for PlayerState {
             volume: 1.0,
             last_folder: None,
             shuffle: false,
+            sort_column: 0,
+            sort_ascending: true,
         }
     }
 }

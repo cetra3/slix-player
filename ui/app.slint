@@ -24,7 +24,11 @@ export component AppWindow inherits Window {
     no-frame: true;
     resize-border-width: 8px;
     background: transparent;
-    title: "Slix Player";
+    title: NowPlaying.artist != "" && NowPlaying.title != ""
+        ? NowPlaying.artist + " - " + NowPlaying.title
+        : NowPlaying.title != ""
+            ? NowPlaying.title
+            : "Slix Player";
     preferred-width: 800px;
     preferred-height: 600px;
 
