@@ -3,6 +3,9 @@ name = "slix-player"
 version = "0.2.0"
 edition = "2024"
 license = "AGPL-3.0"
+description = "A lightweight music player built with Rust & Slint"
+repository = "https://github.com/cetra3/slix-player"
+readme = "README.md"
 build = "build.rs"
 
 [dependencies]
