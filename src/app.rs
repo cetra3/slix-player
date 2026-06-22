@@ -14,6 +14,15 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Decode encoded cover art bytes into raw RGBA plus dimensions.
+fn decode_cover_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+    image::load_from_memory(bytes).ok().map(|img| {
+        let rgba = img.to_rgba8();
+        let (w, h) = rgba.dimensions();
+        (rgba.into_raw(), w, h)
+    })
+}
+
 pub struct App {
     pub weak: slint::Weak<AppWindow>,
     pub track_list: Rc<TrackListController>,
@@ -86,13 +95,7 @@ impl App {
                     }
                 };
 
-                let cover_art_rgba = cover_art_bytes.as_ref().and_then(|bytes| {
-                    image::load_from_memory(bytes).ok().map(|img| {
-                        let rgba = img.to_rgba8();
-                        let (w, h) = rgba.dimensions();
-                        (rgba.into_raw(), w, h)
-                    })
-                });
+                let cover_art_rgba = cover_art_bytes.as_deref().and_then(decode_cover_rgba);
 
                 let _ = result_tx.send(WaveformResult {
                     path,
@@ -194,8 +197,6 @@ impl App {
         np.set_total_time_text(SharedString::from(format_duration_secs(
             entry.duration_secs as f64,
         )));
-        np.set_waveform_image(slint::Image::default());
-        np.set_cover_art(slint::Image::default());
 
         true
     }
@@ -203,6 +204,93 @@ impl App {
     /// Request the background thread to load peaks + cover art from the DB.
     fn start_waveform_load(&self, path: String) {
         let _ = self.waveform_tx.send(path);
+    }
+
+    /// Display the waveform and cover art for the now-playing track. Cached
+    /// peaks are applied synchronously here so selecting an already-analyzed
+    /// track does not flash blank while a background load round-trips. Peaks
+    /// that are not cached yet are computed in the background and arrive later
+    /// via `poll_waveform_ready`.
+    fn load_waveform(&self, path: String) {
+        let cached = self.db.get_track_peaks(&path).ok().flatten();
+        let cover_bytes = self.db.get_cover_art(&path).ok().flatten();
+
+        match cached {
+            Some(track_peaks) => {
+                let cover_art_rgba = cover_bytes.as_deref().and_then(decode_cover_rgba);
+                self.apply_waveform_result(WaveformResult {
+                    path,
+                    peaks: track_peaks.peaks,
+                    peaks_max: track_peaks.peaks_max,
+                    cover_art_rgba,
+                    cover_art_bytes: cover_bytes,
+                    duration_secs: None,
+                });
+            }
+            None => {
+                // Show the cover right away if present; the waveform appears
+                // once peaks finish computing in the background.
+                let window = self.window();
+                let np = window.global::<NowPlaying>();
+                np.set_waveform_image(slint::Image::default());
+                match cover_bytes.as_deref().and_then(decode_cover_rgba) {
+                    Some((rgba, w, h)) => np.set_cover_art(waveform::image_from_rgba(&rgba, w, h)),
+                    None => np.set_cover_art(slint::Image::default()),
+                }
+                self.start_waveform_load(path);
+            }
+        }
+    }
+
+    /// Render a loaded/computed waveform result into the NowPlaying globals and
+    /// refresh MPRIS metadata. Assumes `result.path` is the current track.
+    fn apply_waveform_result(&self, result: WaveformResult) {
+        let window = self.window();
+        let np = window.global::<NowPlaying>();
+        let scale = window.window().scale_factor();
+
+        let w = window.get_waveform_area_width() as u32;
+        if w > 0 {
+            np.set_waveform_image(waveform::render_waveform(
+                &result.peaks,
+                &result.peaks_max,
+                w,
+                waveform::WAVEFORM_HEIGHT,
+                scale,
+            ));
+            *self.last_waveform_width.borrow_mut() = w;
+        }
+
+        match result.cover_art_rgba {
+            Some((rgba, cw, ch)) => {
+                np.set_cover_art(waveform::image_from_rgba(&rgba, cw, ch));
+            }
+            None => {
+                np.set_cover_art(waveform::render_cover_art(
+                    &result.peaks,
+                    &result.peaks_max,
+                    scale,
+                ));
+            }
+        }
+
+        *self.current_peaks.borrow_mut() = result.peaks;
+        *self.current_peaks_max.borrow_mut() = result.peaks_max;
+
+        // Update MPRIS metadata from NowPlaying globals
+        let artist = np.get_artist().to_string();
+        let title = np.get_title().to_string();
+        let path = np.get_path().to_string();
+        let duration_secs = np.get_duration_secs() as f64;
+        self.media_controls.borrow_mut().set_metadata(
+            &MprisTrackInfo {
+                artist: &artist,
+                title: &title,
+                duration_secs,
+                path: &path,
+            },
+            result.cover_art_bytes.as_deref(),
+        );
     }
 
     /// Called from the poll timer. Drains all pending results from the background
@@ -234,53 +322,7 @@ impl App {
             np.set_total_time_text(SharedString::from(format_duration_secs(dur)));
         }
 
-        let scale = window.window().scale_factor();
-
-        let w = window.get_waveform_area_width() as u32;
-        if w > 0 {
-            np.set_waveform_image(waveform::render_waveform(
-                &result.peaks,
-                &result.peaks_max,
-                w,
-                waveform::WAVEFORM_HEIGHT,
-                scale,
-            ));
-        }
-
-        match result.cover_art_rgba {
-            Some((rgba, cw, ch)) => {
-                np.set_cover_art(waveform::image_from_rgba(&rgba, cw, ch));
-            }
-            None => {
-                np.set_cover_art(waveform::render_cover_art(
-                    &result.peaks,
-                    &result.peaks_max,
-                    scale,
-                ));
-            }
-        }
-
-        // Cache peaks for resize
-        if w > 0 {
-            *self.last_waveform_width.borrow_mut() = w;
-        }
-        *self.current_peaks.borrow_mut() = result.peaks;
-        *self.current_peaks_max.borrow_mut() = result.peaks_max;
-
-        // Update MPRIS metadata from NowPlaying globals
-        let artist = np.get_artist().to_string();
-        let title = np.get_title().to_string();
-        let path = np.get_path().to_string();
-        let duration_secs = np.get_duration_secs() as f64;
-        self.media_controls.borrow_mut().set_metadata(
-            &MprisTrackInfo {
-                artist: &artist,
-                title: &title,
-                duration_secs,
-                path: &path,
-            },
-            result.cover_art_bytes.as_deref(),
-        );
+        self.apply_waveform_result(result);
     }
 
     // ── State restoration ─────────────────────────────────────────────
@@ -326,7 +368,7 @@ impl App {
 
         if let Some(ref entry) = saved_entry {
             if self.load_track(entry) {
-                self.start_waveform_load(entry.path.to_string());
+                self.load_waveform(entry.path.to_string());
                 if saved_state.seek_secs > 0.0 {
                     let _ = self
                         .sink
@@ -462,7 +504,7 @@ impl App {
         np.set_current_time_text(SharedString::from("0:00"));
 
         if self.load_track(entry) {
-            self.start_waveform_load(entry.path.to_string());
+            self.load_waveform(entry.path.to_string());
             self.sink.play();
         }
 
