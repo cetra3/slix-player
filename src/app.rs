@@ -10,7 +10,6 @@ use souvlaki::{MediaPlayback, MediaPosition};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,20 +22,65 @@ fn decode_cover_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     })
 }
 
+/// Load (or compute and cache) a track's waveform peaks and cover art. This is
+/// the blocking part, run on a worker thread; the result is rendered back on
+/// the UI thread. Returns None if the track could not be decoded.
+fn compute_waveform_result(db: &TrackDatabase, path: String) -> Option<WaveformResult> {
+    let mut duration_secs = None;
+    let track_peaks = match db.get_track_peaks(&path) {
+        Ok(Some(p)) => p,
+        Ok(None) => match crate::audio::compute_peaks(std::path::Path::new(&path)) {
+            Ok((peaks, dur)) => {
+                if let Err(e) = db.put_peaks(&path, &peaks) {
+                    eprintln!("Failed to cache peaks for {path}: {e}");
+                }
+                // Correct the stored duration if the cheap scan could not
+                // determine it from container metadata.
+                if let Ok(Some(mut meta)) = db.get_track_meta(&path) {
+                    if (meta.total_duration_secs - dur).abs() > 0.5 {
+                        meta.total_duration_secs = dur;
+                        let _ = db.put_meta(&meta);
+                    }
+                }
+                duration_secs = Some(dur);
+                peaks
+            }
+            Err(e) => {
+                eprintln!("Failed to compute peaks for {path}: {e}");
+                return None;
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to load peaks for {path}: {e}");
+            return None;
+        }
+    };
+
+    let cover_art_bytes = db.get_cover_art(&path).ok().flatten();
+    let cover_art_rgba = cover_art_bytes.as_deref().and_then(decode_cover_rgba);
+
+    Some(WaveformResult {
+        path,
+        peaks: track_peaks.peaks,
+        peaks_max: track_peaks.peaks_max,
+        cover_art_rgba,
+        cover_art_bytes,
+        duration_secs,
+    })
+}
+
 pub struct App {
     pub weak: slint::Weak<AppWindow>,
     pub track_list: Rc<TrackListController>,
     pub sink: Rc<rodio::Player>,
     pub db: Arc<TrackDatabase>,
     media_controls: RefCell<MprisControls>,
-    waveform_tx: mpsc::Sender<String>,
     // Rust-only internal state (no Slint-side equivalent)
     current_peaks: RefCell<Vec<f32>>,
     current_peaks_max: RefCell<Vec<f32>>,
     last_waveform_width: RefCell<u32>,
     last_folder: RefCell<PathBuf>,
     pending_scroll: RefCell<i32>,
-    waveform_rx: RefCell<Option<mpsc::Receiver<WaveformResult>>>,
     main_timer: RefCell<Option<slint::Timer>>,
 }
 
@@ -48,66 +92,6 @@ impl App {
         db: Arc<TrackDatabase>,
         last_folder: PathBuf,
     ) -> Result<Rc<Self>> {
-        // Persistent background thread for loading peaks + cover art from DB.
-        let (request_tx, request_rx) = mpsc::channel::<String>();
-        let (result_tx, result_rx) = mpsc::channel::<WaveformResult>();
-
-        let db_for_thread = db.clone();
-        std::thread::spawn(move || {
-            while let Ok(path) = request_rx.recv() {
-                // Peaks are computed lazily on first play, then cached, so the
-                // folder scan stays fast (metadata only, no audio decode).
-                let mut fresh_duration = None;
-                let track_peaks = match db_for_thread.get_track_peaks(&path) {
-                    Ok(Some(p)) => p,
-                    Ok(None) => match crate::audio::compute_peaks(std::path::Path::new(&path)) {
-                        Ok((peaks, dur)) => {
-                            if let Err(e) = db_for_thread.put_peaks(&path, &peaks) {
-                                eprintln!("Failed to cache peaks for {path}: {e}");
-                            }
-                            // Correct the stored duration if the cheap scan
-                            // could not determine it from container metadata.
-                            if let Ok(Some(mut meta)) = db_for_thread.get_track_meta(&path) {
-                                if (meta.total_duration_secs - dur).abs() > 0.5 {
-                                    meta.total_duration_secs = dur;
-                                    let _ = db_for_thread.put_meta(&meta);
-                                }
-                            }
-                            fresh_duration = Some(dur);
-                            peaks
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to compute peaks for {path}: {e}");
-                            continue;
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Failed to load peaks for {path}: {e}");
-                        continue;
-                    }
-                };
-
-                let cover_art_bytes = match db_for_thread.get_cover_art(&path) {
-                    Ok(bytes) => bytes,
-                    Err(e) => {
-                        eprintln!("Failed to load cover art for {path}: {e}");
-                        None
-                    }
-                };
-
-                let cover_art_rgba = cover_art_bytes.as_deref().and_then(decode_cover_rgba);
-
-                let _ = result_tx.send(WaveformResult {
-                    path,
-                    peaks: track_peaks.peaks,
-                    peaks_max: track_peaks.peaks_max,
-                    cover_art_rgba,
-                    cover_art_bytes,
-                    duration_secs: fresh_duration,
-                });
-            }
-        });
-
         let media_controls = MprisControls::init(window.as_weak())?;
 
         Ok(Rc::new(Self {
@@ -116,13 +100,11 @@ impl App {
             sink,
             db,
             media_controls: RefCell::new(media_controls),
-            waveform_tx: request_tx,
             current_peaks: RefCell::new(Vec::new()),
             current_peaks_max: RefCell::new(Vec::new()),
             last_waveform_width: RefCell::new(0),
             last_folder: RefCell::new(last_folder),
             pending_scroll: RefCell::new(-1),
-            waveform_rx: RefCell::new(Some(result_rx)),
             main_timer: RefCell::new(None),
         }))
     }
@@ -201,17 +183,34 @@ impl App {
         true
     }
 
-    /// Request the background thread to load peaks + cover art from the DB.
-    fn start_waveform_load(&self, path: String) {
-        let _ = self.waveform_tx.send(path);
+    /// Compute (or load) this track's waveform on a worker thread, then render
+    /// it on the UI thread when ready. Uses `spawn_local` so the continuation
+    /// can touch `Rc<App>` state directly instead of routing through a poll.
+    /// Used for tracks whose peaks are not cached yet.
+    fn spawn_waveform_compute(self: &Rc<Self>, path: String) {
+        let app = self.clone();
+        let db = self.db.clone();
+        let (tx, rx) = async_channel::bounded::<Option<WaveformResult>>(1);
+
+        std::thread::spawn(move || {
+            let _ = tx.send_blocking(compute_waveform_result(&db, path));
+        });
+
+        let _ = slint::spawn_local(async move {
+            if let Ok(Some(result)) = rx.recv().await {
+                // The user may have selected another track while we computed.
+                if result.path == app.now_playing_path() {
+                    app.apply_waveform_result(result);
+                }
+            }
+        });
     }
 
     /// Display the waveform and cover art for the now-playing track. Cached
     /// peaks are applied synchronously here so selecting an already-analyzed
-    /// track does not flash blank while a background load round-trips. Peaks
-    /// that are not cached yet are computed in the background and arrive later
-    /// via `poll_waveform_ready`.
-    fn load_waveform(&self, path: String) {
+    /// track does not flash blank. Peaks that are not cached yet are computed
+    /// on a worker thread and rendered when ready.
+    fn load_waveform(self: &Rc<Self>, path: String) {
         let cached = self.db.get_track_peaks(&path).ok().flatten();
         let cover_bytes = self.db.get_cover_art(&path).ok().flatten();
 
@@ -237,7 +236,7 @@ impl App {
                     Some((rgba, w, h)) => np.set_cover_art(waveform::image_from_rgba(&rgba, w, h)),
                     None => np.set_cover_art(slint::Image::default()),
                 }
-                self.start_waveform_load(path);
+                self.spawn_waveform_compute(path);
             }
         }
     }
@@ -247,6 +246,14 @@ impl App {
     fn apply_waveform_result(&self, result: WaveformResult) {
         let window = self.window();
         let np = window.global::<NowPlaying>();
+
+        // A freshly computed waveform carries the exact duration, which the
+        // cheap metadata scan may have left at 0 for some formats.
+        if let Some(dur) = result.duration_secs {
+            np.set_duration_secs(dur as f32);
+            np.set_total_time_text(SharedString::from(format_duration_secs(dur)));
+        }
+
         let scale = window.window().scale_factor();
 
         let w = window.get_waveform_area_width() as u32;
@@ -291,38 +298,6 @@ impl App {
             },
             result.cover_art_bytes.as_deref(),
         );
-    }
-
-    /// Called from the poll timer. Drains all pending results from the background
-    /// loader and applies the latest one matching the current track.
-    fn poll_waveform_ready(&self) {
-        let latest = {
-            let rx = self.waveform_rx.borrow();
-            let Some(rx) = rx.as_ref() else { return };
-            let mut latest = None;
-            while let Ok(result) = rx.try_recv() {
-                latest = Some(result);
-            }
-            latest
-        };
-
-        let Some(result) = latest else { return };
-
-        let window = self.window();
-        let np = window.global::<NowPlaying>();
-
-        if result.path != np.get_path().as_str() {
-            return;
-        }
-
-        // A freshly computed waveform carries the exact duration, which the
-        // cheap metadata scan may have left at 0 for some formats.
-        if let Some(dur) = result.duration_secs {
-            np.set_duration_secs(dur as f32);
-            np.set_total_time_text(SharedString::from(format_duration_secs(dur)));
-        }
-
-        self.apply_waveform_result(result);
     }
 
     // ── State restoration ─────────────────────────────────────────────
@@ -438,7 +413,7 @@ impl App {
     }
 
     /// Advance to next track when current track finishes naturally.
-    fn poll_auto_advance(&self) {
+    fn poll_auto_advance(self: &Rc<Self>) {
         let dur = self.now_playing_duration();
         if !self.sink.is_paused() && self.sink.empty() && dur > 0.0 {
             let path = self.now_playing_path();
@@ -497,7 +472,7 @@ impl App {
 
     /// Load and play a track from a TrackEntry (used by track-selected, next, prev).
     /// When `scroll` is true, the list scrolls to the track.
-    fn play_track_entry(&self, entry: &TrackEntry, scroll: bool) {
+    fn play_track_entry(self: &Rc<Self>, entry: &TrackEntry, scroll: bool) {
         let window = self.window();
         let np = window.global::<NowPlaying>();
         np.set_progress(0.0);
@@ -690,7 +665,6 @@ impl App {
                 app.poll_playback_progress();
                 app.poll_auto_advance();
                 app.poll_deferred_scroll();
-                app.poll_waveform_ready();
                 app.poll_waveform_resize();
 
                 // Only update MPRIS playback status when it changes.
