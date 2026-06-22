@@ -46,9 +46,32 @@ impl App {
         let db_for_thread = db.clone();
         std::thread::spawn(move || {
             while let Ok(path) = request_rx.recv() {
+                // Peaks are computed lazily on first play, then cached, so the
+                // folder scan stays fast (metadata only, no audio decode).
+                let mut fresh_duration = None;
                 let track_peaks = match db_for_thread.get_track_peaks(&path) {
                     Ok(Some(p)) => p,
-                    Ok(None) => continue,
+                    Ok(None) => match crate::audio::compute_peaks(std::path::Path::new(&path)) {
+                        Ok((peaks, dur)) => {
+                            if let Err(e) = db_for_thread.put_peaks(&path, &peaks) {
+                                eprintln!("Failed to cache peaks for {path}: {e}");
+                            }
+                            // Correct the stored duration if the cheap scan
+                            // could not determine it from container metadata.
+                            if let Ok(Some(mut meta)) = db_for_thread.get_track_meta(&path) {
+                                if (meta.total_duration_secs - dur).abs() > 0.5 {
+                                    meta.total_duration_secs = dur;
+                                    let _ = db_for_thread.put_meta(&meta);
+                                }
+                            }
+                            fresh_duration = Some(dur);
+                            peaks
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to compute peaks for {path}: {e}");
+                            continue;
+                        }
+                    },
                     Err(e) => {
                         eprintln!("Failed to load peaks for {path}: {e}");
                         continue;
@@ -77,6 +100,7 @@ impl App {
                     peaks_max: track_peaks.peaks_max,
                     cover_art_rgba,
                     cover_art_bytes,
+                    duration_secs: fresh_duration,
                 });
             }
         });
@@ -201,6 +225,13 @@ impl App {
 
         if result.path != np.get_path().as_str() {
             return;
+        }
+
+        // A freshly computed waveform carries the exact duration, which the
+        // cheap metadata scan may have left at 0 for some formats.
+        if let Some(dur) = result.duration_secs {
+            np.set_duration_secs(dur as f32);
+            np.set_total_time_text(SharedString::from(format_duration_secs(dur)));
         }
 
         let scale = window.window().scale_factor();

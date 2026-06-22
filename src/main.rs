@@ -70,7 +70,11 @@ fn main() -> Result<()> {
     window.run()?;
 
     app.save_state();
-    let _ = app.db.persist();
+    // Flush memtables and compact so write-ahead journals do not linger on disk.
+    if let Err(e) = app.db.flush_and_compact() {
+        eprintln!("Failed to flush database on exit: {e}");
+        let _ = app.db.persist();
+    }
 
     Ok(())
 }

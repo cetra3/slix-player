@@ -79,15 +79,37 @@ impl TrackDatabase {
         Ok(())
     }
 
-    pub fn put_track(&self, meta: &TrackMeta, track_peaks: &TrackPeaks, cover_art: Option<&[u8]>) -> Result<()> {
+    /// Flush memtables to segments and compact, so the write-ahead journals do
+    /// not linger on disk between runs. Called on a clean exit.
+    pub fn flush_and_compact(&self) -> Result<()> {
+        for ks in [&self.tracks, &self.peaks, &self.covers, &self.state] {
+            ks.rotate_memtable_and_wait()?;
+            ks.major_compact()?;
+        }
+        self.db.persist(PersistMode::SyncAll)?;
+        Ok(())
+    }
+
+    /// Store track metadata (cheap; written during a scan).
+    pub fn put_meta(&self, meta: &TrackMeta) -> Result<()> {
         let key = meta.path.to_string_lossy().to_string();
         let meta_bytes = bincode::serde::encode_to_vec(meta, BINCODE_CONFIG)?;
-        let peaks_bytes = bincode::serde::encode_to_vec(track_peaks, BINCODE_CONFIG)?;
         self.tracks.insert(key.as_bytes(), meta_bytes)?;
+        Ok(())
+    }
+
+    /// Store cover art bytes for a track (cheap; written during a scan).
+    pub fn put_cover<P: AsRef<Path>>(&self, path: P, cover_art: &[u8]) -> Result<()> {
+        let key = path.as_ref().to_string_lossy().to_string();
+        self.covers.insert(key.as_bytes(), cover_art)?;
+        Ok(())
+    }
+
+    /// Store the waveform peaks for a track (computed on demand on first play).
+    pub fn put_peaks<P: AsRef<Path>>(&self, path: P, track_peaks: &TrackPeaks) -> Result<()> {
+        let key = path.as_ref().to_string_lossy().to_string();
+        let peaks_bytes = bincode::serde::encode_to_vec(track_peaks, BINCODE_CONFIG)?;
         self.peaks.insert(key.as_bytes(), peaks_bytes)?;
-        if let Some(bytes) = cover_art {
-            self.covers.insert(key.as_bytes(), bytes)?;
-        }
         Ok(())
     }
 

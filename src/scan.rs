@@ -43,16 +43,21 @@ pub fn start_scan(
                 return;
             }
 
-            match crate::audio::analyze_track(path) {
-                Ok(t) => {
-                    let entry = meta_to_track_entry(&t.meta);
-                    if let Err(e) = db.put_track(&t.meta, &t.peaks, t.cover_art.as_deref()) {
-                        eprintln!("Failed to cache track: {e}");
+            match crate::audio::read_metadata(path) {
+                Ok((meta, cover_art)) => {
+                    let entry = meta_to_track_entry(&meta);
+                    if let Err(e) = db.put_meta(&meta) {
+                        eprintln!("Failed to cache track meta: {e}");
+                    }
+                    if let Some(bytes) = cover_art {
+                        if let Err(e) = db.put_cover(path, &bytes) {
+                            eprintln!("Failed to cache cover art: {e}");
+                        }
                     }
                     let _ = tx.try_send(ScanMsg::Track(entry));
                 }
                 Err(e) => {
-                    eprintln!("Failed to analyze {}: {e}", path.display());
+                    eprintln!("Failed to read metadata for {}: {e}", path.display());
                 }
             }
         });

@@ -20,6 +20,9 @@ pub struct WaveformResult {
     pub peaks_max: Vec<f32>,
     pub cover_art_rgba: Option<(Vec<u8>, u32, u32)>,
     pub cover_art_bytes: Option<Vec<u8>>,
+    /// Exact duration, set only when peaks were freshly computed on this play
+    /// (lets the UI correct a duration the cheap scan could not determine).
+    pub duration_secs: Option<f64>,
 }
 
 pub struct SortState {
