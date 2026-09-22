@@ -41,6 +41,10 @@ export component AppWindow inherits Window {
     // Rounded clipping container
     Rectangle {
         border-radius: 12px;
+        // 1px border in the section-separator color, so the frameless window
+        // has a visible edge on compositors that draw no shadow (e.g. labwc).
+        border-width: 1px;
+        border-color: #333;
         background: #181818;
         clip: true;
 
