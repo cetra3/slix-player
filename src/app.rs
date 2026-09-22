@@ -124,7 +124,9 @@ impl App {
         let _ = self.db.put_player_state(&PlayerState {
             current_track: if path.is_empty() { None } else { Some(path) },
             seek_secs: self.sink.get_pos().as_secs_f64().min(dur),
-            volume: self.sink.volume(),
+            // Save the level rather than the sink volume, so a mute isn't
+            // persisted as volume 0.
+            volume: self.window().global::<PlayState>().get_volume(),
             last_folder: if folder.as_os_str().is_empty() {
                 None
             } else {
@@ -517,7 +519,8 @@ impl App {
         self.window()
             .global::<PlayState>()
             .on_volume_changed(move |vol| {
-                app.sink.set_volume(vol);
+                let muted = app.window().global::<PlayState>().get_muted();
+                app.sink.set_volume(if muted { 0.0 } else { vol });
                 app.save_state();
             });
     }

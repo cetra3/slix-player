@@ -121,10 +121,9 @@ export component IconButton inherits Rectangle {
 
 export component VolumeControl inherits Rectangle {
     in-out property <float> volume: 1.0;
+    in-out property <bool> muted: false;
     callback changed(float);
 
-    property <bool> muted: false;
-    property <float> saved-volume: 1.0;
     property <float> display-volume: root.muted ? 0.0 : root.volume;
     property <length> track-left: 24px;
     property <length> track-width: root.width - track-left;
@@ -178,15 +177,8 @@ export component VolumeControl inherits Rectangle {
         icon-ta := TouchArea {
             mouse-cursor: pointer;
             clicked => {
-                if root.muted {
-                    root.muted = false;
-                    root.volume = root.saved-volume;
-                    root.changed(root.volume);
-                } else {
-                    root.saved-volume = root.volume;
-                    root.muted = true;
-                    root.changed(0.0);
-                }
+                root.muted = !root.muted;
+                root.changed(root.volume);
             }
         }
     }

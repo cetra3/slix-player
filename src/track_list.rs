@@ -110,6 +110,14 @@ impl TrackListController {
         self.register_sort_changed();
         self.register_shuffle_toggled();
         self.register_filter_changed();
+        self.register_reveal_current();
+    }
+
+    fn register_reveal_current(self: &Rc<Self>) {
+        let ctrl = self.clone();
+        self.window()
+            .global::<TrackListState>()
+            .on_reveal_current(move || ctrl.scroll_to_current());
     }
 
     fn register_sort_changed(self: &Rc<Self>) {
@@ -196,6 +204,11 @@ impl TrackListController {
             (self.sorted_model_reset)();
         }
         (self.filtered_model_reset)();
+        self.scroll_to_current();
+    }
+
+    /// Scroll the list so the now-playing track is centred, if it's visible.
+    pub fn scroll_to_current(&self) {
         let idx = self.find_index_by_path(&self.window().global::<NowPlaying>().get_path());
         self.window().invoke_scroll_to_track(idx);
     }
