@@ -266,8 +266,8 @@ impl App {
 
         let scale = window.window().scale_factor();
 
-        let w = window.get_waveform_area_width() as u32;
-        if w > 0 {
+        let w = window.get_waveform_area_width();
+        if w > 0.0 {
             np.set_waveform_image(waveform::render_waveform(
                 &result.peaks,
                 &result.peaks_max,
@@ -275,7 +275,7 @@ impl App {
                 waveform::WAVEFORM_HEIGHT,
                 scale,
             ));
-            *self.last_waveform_width.borrow_mut() = w;
+            *self.last_waveform_width.borrow_mut() = waveform::physical_width(w, scale);
         }
 
         match result.cover_art_rgba {
@@ -459,7 +459,10 @@ impl App {
     /// Re-render waveform if the container width changed, using cached peaks.
     fn poll_waveform_resize(&self) {
         let window = self.window();
-        let current_w = window.get_waveform_area_width() as u32;
+        let w = window.get_waveform_area_width();
+        let scale = window.window().scale_factor();
+        // Compare physical widths, so a scale factor change also re-renders.
+        let current_w = waveform::physical_width(w, scale);
         let last_w = *self.last_waveform_width.borrow();
         if current_w > 0 && current_w != last_w {
             let peaks = self.current_peaks.borrow();
@@ -467,11 +470,10 @@ impl App {
                 return;
             }
             let peaks_max = self.current_peaks_max.borrow();
-            let scale = window.window().scale_factor();
             let img = waveform::render_waveform(
                 &peaks,
                 &peaks_max,
-                current_w,
+                w,
                 waveform::WAVEFORM_HEIGHT,
                 scale,
             );

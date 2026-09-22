@@ -59,7 +59,7 @@ fn render_waveform_rgba(
     width: u32,
     height: u32,
     bar_w: u32,
-    bar_step: u32,
+    spacing: f32,
 ) -> Vec<u8> {
     let len = (width * height * 4) as usize;
     let mut bytes = vec![0u8; len];
@@ -69,7 +69,7 @@ fn render_waveform_rgba(
     let has_max = !bins_max.is_empty();
 
     for (i, &rms_amp) in bins_rms.iter().enumerate() {
-        let x_start = i as u32 * bar_step;
+        let x_start = (i as f32 * spacing) as u32;
         if x_start + bar_w > width {
             break;
         }
@@ -210,15 +210,21 @@ pub fn render_cover_art(peaks: &[f32], peaks_max: &[f32], scale: f32) -> Image {
 
 /// Render peaks to a Slint Image at a given logical display width.
 /// `scale` multiplies pixel dimensions for HiDPI displays.
-/// The image width is snapped to a bar-step multiple for pixel-perfect bars.
-pub fn render_waveform(peaks_rms: &[f32], peaks_max: &[f32], display_width: u32, height: u32, scale: f32) -> Image {
-    let num_bins = (display_width / BAR_STEP) as usize;
+/// The image is rendered at the exact physical width it's displayed at, so it
+/// is never stretched, and the bars are spread evenly across it: every bar has
+/// the same width and gaps differ by at most one pixel.
+pub fn render_waveform(peaks_rms: &[f32], peaks_max: &[f32], display_width: f32, height: u32, scale: f32) -> Image {
+    let num_bins = (display_width / BAR_STEP as f32) as usize;
     if num_bins == 0 {
         return Image::default();
     }
-    let bar_w = (BAR_WIDTH as f32 * scale).round() as u32;
-    let bar_step = bar_w + (BAR_GAP as f32 * scale).round() as u32;
-    let width = num_bins as u32 * bar_step;
+    let width = physical_width(display_width, scale);
+    let spacing = width as f32 / num_bins as f32;
+    // Derive the bar width from the spacing so there is always a gap, even at
+    // fractional scale factors where rounding the bar and gap separately
+    // could make them touch.
+    let gap = ((BAR_GAP as f32 * scale).round() as u32).max(1);
+    let bar_w = (spacing as u32).saturating_sub(gap).max(1);
     let h = (height as f32 * scale).round() as u32;
     let bins_rms = compute_bins(peaks_rms, num_bins);
     let bins_max = if peaks_max.is_empty() {
@@ -226,6 +232,11 @@ pub fn render_waveform(peaks_rms: &[f32], peaks_max: &[f32], display_width: u32,
     } else {
         compute_bins(peaks_max, num_bins)
     };
-    let rgba = render_waveform_rgba(&bins_rms, &bins_max, width, h, bar_w, bar_step);
+    let rgba = render_waveform_rgba(&bins_rms, &bins_max, width, h, bar_w, spacing);
     image_from_rgba(&rgba, width, h)
+}
+
+/// The physical pixel width of a logical width at the given scale factor.
+pub fn physical_width(display_width: f32, scale: f32) -> u32 {
+    (display_width * scale).round() as u32
 }
