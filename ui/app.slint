@@ -14,6 +14,8 @@ export component AppWindow inherits Window {
 
     out property <float> waveform-area-width: waveform-view.width / 1px;
     in-out property <bool> filter-visible: false;
+    // Volume to restore when unmuting with the keyboard shortcut.
+    property <float> pre-mute-volume: 1.0;
 
     callback load-folder();
     callback scroll-to-track(int);
@@ -423,6 +425,18 @@ export component AppWindow inherits Window {
                 accepted => {
                     root.filter-visible = false;
                 }
+                key-pressed(event) => {
+                    // Escape: clear the filter, close it, and return focus.
+                    if (event.text == Key.Escape) {
+                        TrackListState.filter-text = "";
+                        TrackListState.filter-changed("");
+                        root.filter-visible = false;
+                        key-handler.focus();
+                        accept
+                    } else {
+                        reject
+                    }
+                }
             }
         }
     }
@@ -438,8 +452,51 @@ export component AppWindow inherits Window {
         height: 0;
 
         key-pressed(event) => {
-            if (event.text == " ") {
+            // Ctrl+F: open and focus the search field.
+            if (event.modifiers.control && event.text == "f") {
+                root.filter-visible = true;
+                filter-input.focus();
+                accept
+            // Ctrl+Left / Ctrl+Right: previous / next track.
+            } else if (event.modifiers.control && event.text == Key.LeftArrow) {
+                PlayState.prev();
+                accept
+            } else if (event.modifiers.control && event.text == Key.RightArrow) {
+                PlayState.next();
+                accept
+            // Space: play / pause.
+            } else if (event.text == " ") {
                 PlayState.play-pause();
+                accept
+            // Left / Right: seek 5 seconds back / forward.
+            } else if (event.text == Key.LeftArrow) {
+                PlayState.seek(clamp(NowPlaying.progress - 5 / max(1, NowPlaying.duration-secs), 0.0, 1.0));
+                accept
+            } else if (event.text == Key.RightArrow) {
+                PlayState.seek(clamp(NowPlaying.progress + 5 / max(1, NowPlaying.duration-secs), 0.0, 1.0));
+                accept
+            // Up / Down: volume in 5% steps.
+            } else if (event.text == Key.UpArrow) {
+                PlayState.volume = clamp(PlayState.volume + 0.05, 0.0, 1.0);
+                PlayState.volume-changed(PlayState.volume);
+                accept
+            } else if (event.text == Key.DownArrow) {
+                PlayState.volume = clamp(PlayState.volume - 0.05, 0.0, 1.0);
+                PlayState.volume-changed(PlayState.volume);
+                accept
+            // Home: restart the current track.
+            } else if (event.text == Key.Home) {
+                PlayState.seek(0.0);
+                accept
+            // M: mute / unmute.
+            } else if (event.text == "m") {
+                if (PlayState.volume > 0.0) {
+                    root.pre-mute-volume = PlayState.volume;
+                    PlayState.volume = 0.0;
+                } else {
+                    PlayState.volume = root.pre-mute-volume > 0.0 ? root.pre-mute-volume : 1.0;
+                }
+                PlayState.volume-changed(PlayState.volume);
                 accept
             } else {
                 reject
