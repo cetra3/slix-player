@@ -19,17 +19,11 @@ slint::include_modules!();
 fn main() -> Result<()> {
     let backend = i_slint_backend_winit::Backend::builder()
         .with_window_attributes_hook(|attrs| {
-            let attrs =
-                attrs.with_theme(Some(i_slint_backend_winit::winit::window::Theme::Dark));
-            #[cfg(target_os = "linux")]
-            let attrs = {
-                use i_slint_backend_winit::winit::platform::wayland::WindowAttributesExtWayland;
-                attrs.with_name("slix-player", "")
-            };
-            attrs
+            attrs.with_theme(Some(i_slint_backend_winit::winit::window::Theme::Dark))
         })
         .build()?;
     slint::platform::set_platform(Box::new(backend))?;
+    slint::set_xdg_app_id("slix-player")?;
 
     let db_dir = dirs::state_dir()
         .or_else(|| dirs::data_local_dir())

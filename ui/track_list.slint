@@ -60,7 +60,7 @@ component SortableColumnHeader inherits Rectangle {
 export component TrackListView inherits VerticalLayout {
     public function scroll-to-track(index: int) {
         if (index >= 0) {
-            track-list-view.viewport-y = 0 - index * 36px + track-list-view.height / 2 - 18px;
+            track-list-view.content-y = min(0px, 0 - index * 36px + track-list-view.visible-height / 2 - 18px);
         }
     }
 

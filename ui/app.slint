@@ -16,8 +16,6 @@ export component AppWindow inherits Window {
     in-out property <bool> filter-visible: false;
 
     callback load-folder();
-    callback drag-window();
-    callback close-window();
     callback scroll-to-track(int);
 
     default-font-family: "Geist";
@@ -71,13 +69,7 @@ export component AppWindow inherits Window {
                 }
 
                 // Drag area covers entire title bar
-                TouchArea {
-                    pointer-event(event) => {
-                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
-                            root.drag-window();
-                        }
-                    }
-                }
+                WindowMoveArea { }
 
                 // Close button (declared last = on top in z-order, receives clicks first)
                 Rectangle {
@@ -101,7 +93,7 @@ export component AppWindow inherits Window {
                     close-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => {
-                            root.close-window();
+                            root.hide();
                         }
                     }
                 }
