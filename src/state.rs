@@ -15,7 +15,6 @@ pub const COL_MODIFIED: i32 = 3;
 
 /// Result from background waveform loading thread.
 pub struct WaveformResult {
-    pub path: String,
     pub peaks: Vec<f32>,
     pub peaks_max: Vec<f32>,
     pub cover_art_rgba: Option<(Vec<u8>, u32, u32)>,

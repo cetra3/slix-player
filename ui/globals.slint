@@ -14,6 +14,8 @@ export global NowPlaying {
     in property <string> title;
     in property <image> cover-art;
     in property <image> waveform-image;
+    // True while the now-playing track's waveform is being computed.
+    in property <bool> waveform-loading;
     in property <float> duration-secs;
     in property <float> progress;
     in property <string> current-time-text: "0:00";

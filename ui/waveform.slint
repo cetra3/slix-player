@@ -1,12 +1,43 @@
 export component WaveformView inherits Rectangle {
     in property <image> waveform-image;
     in property <float> progress: 0.0;
+    in property <bool> loading: false;
     callback seek(float);
 
     property <bool> hovering: ta.has-hover;
     property <length> hover-x: ta.mouse-x;
 
     background: transparent;
+
+    // Loading placeholder: the repeating peak shape from the app icon
+    // (ui/icons/icon.svg), with its RMS bars and 30%-opacity peak-max shadow,
+    // pulsing gently. Coloured like the real waveform: blue before the playback
+    // position, grey after.
+    if root.loading: placeholder := Rectangle {
+        // Bar heights for one 8-bar peak, as fractions of the icon's tallest bar.
+        property <[float]> rms-shape: [24 / 360, 84 / 360, 168 / 360, 280 / 360, 1.0, 280 / 360, 168 / 360, 84 / 360];
+        property <[float]> max-shape: [60 / 360, 120 / 360, 208 / 360, 316 / 360, 1.0, 316 / 360, 208 / 360, 120 / 360];
+        property <length> peak-height: root.height * 0.9;
+        opacity: 0.6 + 0.4 * sin(360deg * mod(animation-tick() / 1ms, 1600) / 1600);
+
+        for i in floor(root.width / 4px): bar := Rectangle {
+            property <color> colour: (i * 4px) < root.width * clamp(root.progress, 0.0, 1.0) ? #73c6ec : #555;
+            x: i * 4px;
+            width: 3px;
+
+            Rectangle {
+                y: (root.height - self.height) / 2;
+                height: placeholder.peak-height * placeholder.max-shape[mod(i, 8)];
+                background: bar.colour;
+                opacity: 0.3;
+            }
+            Rectangle {
+                y: (root.height - self.height) / 2;
+                height: placeholder.peak-height * placeholder.rms-shape[mod(i, 8)];
+                background: bar.colour;
+            }
+        }
+    }
 
     // Gray waveform (full width, bottom layer)
     Image {

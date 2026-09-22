@@ -60,7 +60,6 @@ fn compute_waveform_result(db: &TrackDatabase, path: String) -> Option<WaveformR
     let cover_art_rgba = cover_art_bytes.as_deref().and_then(decode_cover_rgba);
 
     Some(WaveformResult {
-        path,
         peaks: track_peaks.peaks,
         peaks_max: track_peaks.peaks_max,
         cover_art_rgba,
@@ -193,17 +192,25 @@ impl App {
         let app = self.clone();
         let db = self.db.clone();
         let (tx, rx) = async_channel::bounded::<Option<WaveformResult>>(1);
+        let requested = path.clone();
 
         std::thread::spawn(move || {
             let _ = tx.send_blocking(compute_waveform_result(&db, path));
         });
 
         let _ = slint::spawn_local(async move {
-            if let Ok(Some(result)) = rx.recv().await {
-                // The user may have selected another track while we computed.
-                if result.path == app.now_playing_path() {
-                    app.apply_waveform_result(result);
-                }
+            let result = rx.recv().await;
+            // The user may have selected another track while we computed.
+            if requested != app.now_playing_path() {
+                return;
+            }
+            match result {
+                Ok(Some(result)) => app.apply_waveform_result(result),
+                // Decoding failed: stop showing the loading placeholder.
+                _ => app
+                    .window()
+                    .global::<NowPlaying>()
+                    .set_waveform_loading(false),
             }
         });
     }
@@ -220,7 +227,6 @@ impl App {
             Some(track_peaks) => {
                 let cover_art_rgba = cover_bytes.as_deref().and_then(decode_cover_rgba);
                 self.apply_waveform_result(WaveformResult {
-                    path,
                     peaks: track_peaks.peaks,
                     peaks_max: track_peaks.peaks_max,
                     cover_art_rgba,
@@ -234,6 +240,7 @@ impl App {
                 let window = self.window();
                 let np = window.global::<NowPlaying>();
                 np.set_waveform_image(slint::Image::default());
+                np.set_waveform_loading(true);
                 match cover_bytes.as_deref().and_then(decode_cover_rgba) {
                     Some((rgba, w, h)) => np.set_cover_art(waveform::image_from_rgba(&rgba, w, h)),
                     None => np.set_cover_art(slint::Image::default()),
@@ -248,6 +255,7 @@ impl App {
     fn apply_waveform_result(&self, result: WaveformResult) {
         let window = self.window();
         let np = window.global::<NowPlaying>();
+        np.set_waveform_loading(false);
 
         // A freshly computed waveform carries the exact duration, which the
         // cheap metadata scan may have left at 0 for some formats.

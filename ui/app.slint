@@ -205,6 +205,7 @@ export component AppWindow inherits Window {
                                 width: parent.width;
                                 height: parent.height;
                                 waveform-image: NowPlaying.waveform-image;
+                                loading: NowPlaying.waveform-loading;
                                 progress: NowPlaying.progress;
                                 seek(p) => { PlayState.seek(p); }
                             }
