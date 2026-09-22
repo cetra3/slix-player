@@ -198,16 +198,32 @@ pub fn read_metadata(path: &Path) -> Result<(TrackMeta, Option<Vec<u8>>)> {
         .map(|c| c.count() as u16)
         .unwrap_or(2);
 
-    // Duration from container metadata, no decode. Some formats (e.g. VBR MP3
-    // without a Xing header) report no frame count; those read as 0.0 here and
-    // get their exact duration filled in by compute_peaks on first play.
-    let total_duration_secs = match (track.codec_params.n_frames, track.codec_params.time_base) {
-        (Some(n), Some(tb)) => {
+    let track_id = track.id;
+    let time_base = track.codec_params.time_base;
+    let to_secs = |n: u64| match time_base {
+        Some(tb) => {
             let t = tb.calc_time(n);
             t.seconds as f64 + t.frac
         }
-        (Some(n), None) => n as f64 / sample_rate as f64,
-        _ => 0.0,
+        None => n as f64 / sample_rate as f64,
+    };
+
+    // Duration from container metadata when available. Some files report no
+    // frame count (VBR MP3 without a Xing header) or zero (fragmented MP4, as
+    // SoundCloud serves); for those, demux every packet and sum their
+    // durations. That's exact and much cheaper than a full decode, since no
+    // audio is decoded.
+    let total_duration_secs = match track.codec_params.n_frames {
+        Some(n) if n > 0 => to_secs(n),
+        _ => {
+            let mut total: u64 = 0;
+            while let Ok(packet) = format.next_packet() {
+                if packet.track_id() == track_id {
+                    total += packet.dur;
+                }
+            }
+            to_secs(total)
+        }
     };
 
     let cover_art = cover_art.map(|bytes| downscale_cover(&bytes));
