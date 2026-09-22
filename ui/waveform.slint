@@ -18,7 +18,7 @@ export component WaveformView inherits Rectangle {
         property <[float]> rms-shape: [24 / 360, 84 / 360, 168 / 360, 280 / 360, 1.0, 280 / 360, 168 / 360, 84 / 360];
         property <[float]> max-shape: [60 / 360, 120 / 360, 208 / 360, 316 / 360, 1.0, 316 / 360, 208 / 360, 120 / 360];
         property <length> peak-height: root.height * 0.9;
-        opacity: 0.6 + 0.4 * sin(360deg * mod(animation-tick() / 1ms, 1600) / 1600);
+        opacity: 0.6 + 0.4 * sin(360deg * mod(animation-tick() / 1ms, 3000) / 3000);
 
         for i in floor(root.width / 4px): bar := Rectangle {
             property <color> colour: (i * 4px) < root.width * clamp(root.progress, 0.0, 1.0) ? #73c6ec : #555;
