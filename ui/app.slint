@@ -202,7 +202,9 @@ export component AppWindow inherits Window {
                             waveform-view := WaveformView {
                                 visible: NowPlaying.title != "";
                                 x: 0; y: 0;
-                                width: parent.width;
+                                // Snap to a whole number of 4px bar steps so bars
+                                // and gaps map evenly onto the image.
+                                width: floor(parent.width / 4px) * 4px;
                                 height: parent.height;
                                 waveform-image: NowPlaying.waveform-image;
                                 loading: NowPlaying.waveform-loading;
