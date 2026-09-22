@@ -23,6 +23,8 @@ export global NowPlaying {
 export global PlayState {
     in property <bool> is-playing;
     in-out property <float> volume: 1.0;
+    // Muting keeps `volume` at its level so unmuting restores it.
+    in-out property <bool> muted: false;
     callback play-pause();
     callback seek(float);
     callback volume-changed(float);
@@ -42,4 +44,5 @@ export global TrackListState {
     callback shuffle-toggled();
     callback filter-changed(string);
     callback track-selected(TrackEntry);
+    callback reveal-current();
 }

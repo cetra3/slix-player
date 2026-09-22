@@ -12,21 +12,17 @@ pub fn compute_bins(peaks: &[f32], num_bins: usize) -> Vec<f32> {
         return vec![0.0; num_bins];
     }
 
-    let peaks_per_bin = peaks.len() / num_bins;
-    if peaks_per_bin == 0 {
-        let mut bins = peaks.to_vec();
-        bins.resize(num_bins, 0.0);
-        return normalize(bins);
-    }
-
+    // Map every bin to a proportional slice of the input so the whole track is
+    // covered. A fixed peaks-per-bin (len / num_bins) would drop the remainder
+    // (len % num_bins) off the end, clipping the right of the waveform by an
+    // amount that grows as the window widens. When num_bins exceeds the number
+    // of peaks, each peak simply spans several bins.
+    let n = peaks.len();
     let mut bins = Vec::with_capacity(num_bins);
     for i in 0..num_bins {
-        let start = i * peaks_per_bin;
-        let end = ((i + 1) * peaks_per_bin).min(peaks.len());
-        let peak = peaks[start..end]
-            .iter()
-            .cloned()
-            .fold(0.0f32, f32::max);
+        let start = i * n / num_bins;
+        let end = ((i + 1) * n / num_bins).max(start + 1).min(n);
+        let peak = peaks[start..end].iter().cloned().fold(0.0f32, f32::max);
         bins.push(peak);
     }
 

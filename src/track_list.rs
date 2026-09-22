@@ -47,7 +47,10 @@ impl TrackListController {
                 let ord = match sort.column {
                     COL_ARTIST => a.artist.to_lowercase().cmp(&b.artist.to_lowercase()),
                     COL_TITLE => a.title.to_lowercase().cmp(&b.title.to_lowercase()),
-                    COL_DURATION => a.duration_text.cmp(&b.duration_text),
+                    COL_DURATION => a
+                        .duration_secs
+                        .partial_cmp(&b.duration_secs)
+                        .unwrap_or(std::cmp::Ordering::Equal),
                     COL_MODIFIED => a.mtime_secs.cmp(&b.mtime_secs),
                     _ => std::cmp::Ordering::Equal,
                 };
@@ -107,6 +110,14 @@ impl TrackListController {
         self.register_sort_changed();
         self.register_shuffle_toggled();
         self.register_filter_changed();
+        self.register_reveal_current();
+    }
+
+    fn register_reveal_current(self: &Rc<Self>) {
+        let ctrl = self.clone();
+        self.window()
+            .global::<TrackListState>()
+            .on_reveal_current(move || ctrl.scroll_to_current());
     }
 
     fn register_sort_changed(self: &Rc<Self>) {
@@ -193,6 +204,11 @@ impl TrackListController {
             (self.sorted_model_reset)();
         }
         (self.filtered_model_reset)();
+        self.scroll_to_current();
+    }
+
+    /// Scroll the list so the now-playing track is centred, if it's visible.
+    pub fn scroll_to_current(&self) {
         let idx = self.find_index_by_path(&self.window().global::<NowPlaying>().get_path());
         self.window().invoke_scroll_to_track(idx);
     }
@@ -306,8 +322,7 @@ impl TrackListController {
 
         let track_model = self.track_model.clone();
         let weak = self.weak.clone();
-        let sorted_reset = self.sorted_model_reset.clone();
-        let filtered_reset = self.filtered_model_reset.clone();
+        let ctrl = self.clone();
 
         // Seed with paths already in the model so we never push duplicates.
         let mut seen: HashSet<String> = (0..track_model.row_count())
@@ -334,11 +349,11 @@ impl TrackListController {
                     &mut scan_done,
                 );
                 if finished {
-                    // Reset models once at the end to fix column widths.
+                    // Reset models once at the end to fix column widths, and
+                    // re-scroll since added tracks may have shifted the current one.
                     // We intentionally avoid resetting per-batch because it
                     // rebuilds every ListView row, swallowing click events.
-                    (sorted_reset)();
-                    (filtered_reset)();
+                    ctrl.resync(true);
                     set_loading_done(&weak);
                     break;
                 }
@@ -356,8 +371,7 @@ impl TrackListController {
                         &mut scan_done,
                     );
                     if finished {
-                        (sorted_reset)();
-                        (filtered_reset)();
+                        ctrl.resync(true);
                         set_loading_done(&weak);
                         return;
                     }

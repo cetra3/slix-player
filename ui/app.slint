@@ -16,8 +16,6 @@ export component AppWindow inherits Window {
     in-out property <bool> filter-visible: false;
 
     callback load-folder();
-    callback drag-window();
-    callback close-window();
     callback scroll-to-track(int);
 
     default-font-family: "Geist";
@@ -41,6 +39,10 @@ export component AppWindow inherits Window {
     // Rounded clipping container
     Rectangle {
         border-radius: 12px;
+        // 1px border in the section-separator color, so the frameless window
+        // has a visible edge on compositors that draw no shadow (e.g. labwc).
+        border-width: 1px;
+        border-color: #333;
         background: #181818;
         clip: true;
 
@@ -67,13 +69,7 @@ export component AppWindow inherits Window {
                 }
 
                 // Drag area covers entire title bar
-                TouchArea {
-                    pointer-event(event) => {
-                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
-                            root.drag-window();
-                        }
-                    }
-                }
+                WindowMoveArea { }
 
                 // Close button (declared last = on top in z-order, receives clicks first)
                 Rectangle {
@@ -97,7 +93,7 @@ export component AppWindow inherits Window {
                     close-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => {
-                            root.close-window();
+                            root.hide();
                         }
                     }
                 }
@@ -362,6 +358,8 @@ export component AppWindow inherits Window {
                             root.filter-visible = !root.filter-visible;
                             if root.filter-visible {
                                 filter-input.focus();
+                            } else {
+                                key-handler.focus();
                             }
                         }
                     }
@@ -369,6 +367,7 @@ export component AppWindow inherits Window {
                     VolumeControl {
                         horizontal-stretch: 0;
                         volume <=> PlayState.volume;
+                        muted <=> PlayState.muted;
                         changed(vol) => { PlayState.volume-changed(vol); }
                     }
                 }
@@ -424,8 +423,25 @@ export component AppWindow inherits Window {
                     TrackListState.filter-text = self.text;
                     TrackListState.filter-changed(self.text);
                 }
+                // Enter: play the first match, close the filter, and return focus.
                 accepted => {
+                    if (TrackListState.tracks.length > 0) {
+                        TrackListState.track-selected(TrackListState.tracks[0]);
+                    }
                     root.filter-visible = false;
+                    key-handler.focus();
+                }
+                key-pressed(event) => {
+                    // Escape: clear the filter, close it, and return focus.
+                    if (event.text == Key.Escape) {
+                        TrackListState.filter-text = "";
+                        TrackListState.filter-changed("");
+                        root.filter-visible = false;
+                        key-handler.focus();
+                        accept
+                    } else {
+                        reject
+                    }
                 }
             }
         }
@@ -442,8 +458,71 @@ export component AppWindow inherits Window {
         height: 0;
 
         key-pressed(event) => {
-            if (event.text == " ") {
+            // Letter and digit shortcuts only fire without Ctrl/Alt/Meta so they
+            // don't swallow other combinations.
+            let plain = !event.modifiers.control && !event.modifiers.alt && !event.modifiers.meta;
+            // Ctrl+F or /: open and focus the search field.
+            if ((event.modifiers.control && (event.text == "f" || event.text == "F")) || (plain && event.text == "/")) {
+                root.filter-visible = true;
+                filter-input.focus();
+                accept
+            // Ctrl+O: open a music folder.
+            } else if (event.modifiers.control && (event.text == "o" || event.text == "O")) {
+                root.load-folder();
+                accept
+            // Ctrl+Q: quit.
+            } else if (event.modifiers.control && (event.text == "q" || event.text == "Q")) {
+                root.hide();
+                accept
+            // Ctrl+Left / Ctrl+Right: previous / next track.
+            } else if (event.modifiers.control && event.text == Key.LeftArrow) {
+                PlayState.prev();
+                accept
+            } else if (event.modifiers.control && event.text == Key.RightArrow) {
+                PlayState.next();
+                accept
+            // Space: play / pause.
+            } else if (event.text == " ") {
                 PlayState.play-pause();
+                accept
+            // Left / Right: seek 5 seconds back / forward (30 seconds with Shift).
+            } else if (event.text == Key.LeftArrow) {
+                PlayState.seek(clamp(NowPlaying.progress - (event.modifiers.shift ? 30 : 5) / max(1, NowPlaying.duration-secs), 0.0, 1.0));
+                accept
+            } else if (event.text == Key.RightArrow) {
+                PlayState.seek(clamp(NowPlaying.progress + (event.modifiers.shift ? 30 : 5) / max(1, NowPlaying.duration-secs), 0.0, 1.0));
+                accept
+            // Up / Down: volume in 5% steps (also unmutes).
+            } else if (event.text == Key.UpArrow) {
+                PlayState.muted = false;
+                PlayState.volume = clamp(PlayState.volume + 0.05, 0.0, 1.0);
+                PlayState.volume-changed(PlayState.volume);
+                accept
+            } else if (event.text == Key.DownArrow) {
+                PlayState.muted = false;
+                PlayState.volume = clamp(PlayState.volume - 0.05, 0.0, 1.0);
+                PlayState.volume-changed(PlayState.volume);
+                accept
+            // Home: restart the current track.
+            } else if (event.text == Key.Home) {
+                PlayState.seek(0.0);
+                accept
+            // 0-9: jump to 0%-90% of the track.
+            } else if (plain && event.text.character-count == 1 && event.text >= "0" && event.text <= "9") {
+                PlayState.seek(event.text.to-float() / 10);
+                accept
+            // M: mute / unmute.
+            } else if (plain && (event.text == "m" || event.text == "M")) {
+                PlayState.muted = !PlayState.muted;
+                PlayState.volume-changed(PlayState.volume);
+                accept
+            // S: toggle shuffle.
+            } else if (plain && (event.text == "s" || event.text == "S")) {
+                TrackListState.shuffle-toggled();
+                accept
+            // L: scroll the track list to the playing track.
+            } else if (plain && (event.text == "l" || event.text == "L")) {
+                TrackListState.reveal-current();
                 accept
             } else {
                 reject

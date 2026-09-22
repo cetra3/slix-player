@@ -133,7 +133,9 @@ impl App {
         let _ = self.db.put_player_state(&PlayerState {
             current_track: if path.is_empty() { None } else { Some(path) },
             seek_secs: self.sink.get_pos().as_secs_f64().min(dur),
-            volume: self.sink.volume(),
+            // Save the level rather than the sink volume, so a mute isn't
+            // persisted as volume 0.
+            volume: self.window().global::<PlayState>().get_volume(),
             last_folder: if folder.as_os_str().is_empty() {
                 None
             } else {
@@ -330,11 +332,13 @@ impl App {
             self.track_list.push_track(entry);
         }
 
+        // Restore sort before the rebuild: the reset below sorts the model, and
+        // changing the sort state afterwards doesn't re-sort it.
+        self.track_list.restore_sort(saved_state.sort_column, saved_state.sort_ascending);
+
         // Force a full model rebuild after the bulk load so column widths
         // are calculated correctly from the start.
         self.track_list.resync(true);
-
-        self.track_list.restore_sort(saved_state.sort_column, saved_state.sort_ascending);
 
         if saved_state.shuffle {
             let current_path = saved_state.current_track.as_deref().unwrap_or("");
@@ -494,8 +498,6 @@ impl App {
     }
 
     pub fn register_all(self: &Rc<Self>) {
-        self.register_drag_window();
-        self.register_close_window();
         self.register_load_folder();
         self.register_track_selected();
         self.register_play_pause();
@@ -504,40 +506,6 @@ impl App {
         self.register_next();
         self.register_prev();
         self.register_poll_timer();
-    }
-
-    fn register_drag_window(self: &Rc<Self>) {
-        let weak = self.weak.clone();
-        self.window().on_drag_window(move || {
-            if let Some(app) = weak.upgrade() {
-                use slint::winit_030::WinitWindowAccessor;
-                let _ = app.window().with_winit_window(|w| {
-                    let _ = w.drag_window();
-                });
-                let weak_inner = app.as_weak();
-                slint::Timer::single_shot(Duration::from_millis(0), move || {
-                    if let Some(app) = weak_inner.upgrade() {
-                        app.window().dispatch_event(
-                            slint::platform::WindowEvent::PointerReleased {
-                                position: slint::LogicalPosition::new(0.0, 0.0),
-                                button: slint::platform::PointerEventButton::Left,
-                            },
-                        );
-                        app.window()
-                            .dispatch_event(slint::platform::WindowEvent::PointerExited);
-                    }
-                });
-            }
-        });
-    }
-
-    fn register_close_window(self: &Rc<Self>) {
-        let weak = self.weak.clone();
-        self.window().on_close_window(move || {
-            if let Some(app) = weak.upgrade() {
-                let _ = app.hide();
-            }
-        });
     }
 
     fn register_load_folder(self: &Rc<Self>) {
@@ -599,7 +567,8 @@ impl App {
         self.window()
             .global::<PlayState>()
             .on_volume_changed(move |vol| {
-                app.sink.set_volume(vol);
+                let muted = app.window().global::<PlayState>().get_muted();
+                app.sink.set_volume(if muted { 0.0 } else { vol });
                 app.save_state();
             });
     }

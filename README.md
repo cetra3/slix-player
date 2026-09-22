@@ -23,6 +23,28 @@ But it does extract some info about the tracks & maintains your last playing sta
 * Playback using [`rodio`](https://github.com/RustAudio/rodio)
 * Media Control Integration with [`souvlaki`](https://github.com/Sinono3/souvlaki)
 
+## Keyboard Shortcuts
+
+| Key | Action |
+|---|---|
+| <kbd>Space</kbd> | Play / pause |
+| <kbd>←</kbd> / <kbd>→</kbd> | Seek back / forward 5 seconds |
+| <kbd>Shift</kbd>+<kbd>←</kbd> / <kbd>→</kbd> | Seek back / forward 30 seconds |
+| <kbd>0</kbd>–<kbd>9</kbd> | Jump to 0%–90% of the track |
+| <kbd>Home</kbd> | Restart the track |
+| <kbd>Ctrl</kbd>+<kbd>←</kbd> / <kbd>→</kbd> | Previous / next track |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Volume up / down |
+| <kbd>M</kbd> | Mute / unmute |
+| <kbd>S</kbd> | Toggle shuffle |
+| <kbd>L</kbd> | Scroll to the playing track |
+| <kbd>Ctrl</kbd>+<kbd>F</kbd> or <kbd>/</kbd> | Search |
+| <kbd>Enter</kbd> (in search) | Play the first match |
+| <kbd>Esc</kbd> (in search) | Clear and close search |
+| <kbd>Ctrl</kbd>+<kbd>O</kbd> | Open a music folder |
+| <kbd>Ctrl</kbd>+<kbd>Q</kbd> | Quit |
+
+On macOS, use <kbd>Cmd</kbd> in place of <kbd>Ctrl</kbd>.
+
 *Note: This is a bit of an alpha project and there are probably bugs.  Feel free to raise an issue or a PR!*
 
 ## Downloads
